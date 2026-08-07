@@ -1,0 +1,52 @@
+---
+# Suricata network IDS on coldcoffee, monitoring eno1 (the LAN interface) in
+# passive/IDS mode - detection only, no inline blocking here. CrowdSec reads
+# its eve.json alerts and handles the actual response/blocking decision.
+- name: Install and configure Suricata IDS
+  hosts: coldcoffee_host
+  become: true
+
+  vars:
+    monitor_interface: eno1
+    home_net: "[192.168.29.0/24]"
+
+  tasks:
+    - name: Install Suricata
+      apt:
+        name: suricata
+        state: present
+        update_cache: true
+
+    - name: Set HOME_NET to the actual LAN subnet
+      lineinfile:
+        path: /etc/suricata/suricata.yaml
+        regexp: '^    HOME_NET: "\[192\.168\.0\.0/16.*'
+        line: '    HOME_NET: "{{ home_net }}"'
+      notify: restart suricata
+
+    # There are 3 "interface: eth0" lines in the stock config (af-packet,
+    # pcap, nflog sections) - anchor on the af-packet: header (appears once)
+    # so only the section that's actually active gets touched.
+    - name: Configure af-packet interface
+      replace:
+        path: /etc/suricata/suricata.yaml
+        regexp: '(af-packet:\n  - interface: )eth0'
+        replace: '\1{{ monitor_interface }}'
+      notify: restart suricata
+
+    - name: Update Suricata's ET Open ruleset
+      command: suricata-update
+      register: rule_update
+      changed_when: "'done' in rule_update.stdout"
+
+    - name: Enable and start Suricata
+      systemd:
+        name: suricata
+        enabled: true
+        state: started
+
+  handlers:
+    - name: restart suricata
+      systemd:
+        name: suricata
+        state: restarted
