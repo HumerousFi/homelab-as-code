@@ -1,0 +1,15 @@
+#cloud-config
+hostname: kali-attack
+manage_etc_hosts: true
+
+# Key-only access — reuses the same key coldcoffee already uses to reach
+# masalachai, so the access chain stays: you -> Tailscale -> masalachai -> kali-attack.
+ssh_pwauth: false
+disable_root: true
+ssh_authorized_keys:
+  - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPehnF3DGaNF3lWk4/FDn0PRkuub1jqL/KgJXpHfZ5pc coldcoffee-to-masalachai
+
+chpasswd:
+  expire: false
+
+package_update: false

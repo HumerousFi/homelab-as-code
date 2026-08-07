@@ -1,0 +1,107 @@
+---
+# Deploys the headless Kali attack box: cloud-init provisioned (no manual
+# installer interaction), CLI-only, sized for masalachai's 3.7GB RAM ceiling.
+# NIC 1 -> range-nat (internet, for tool updates). NIC 2 -> range-isolated
+# (reaches vulnerable targets, no internet).
+- name: Deploy the Kali attack box VM
+  hosts: masalachai_host
+  become: true
+
+  vars:
+    kali_version: "2026.2"
+    kali_tarball: "kali-linux-{{ kali_version }}-cloud-genericcloud-amd64.tar.xz"
+    kali_dir: /var/lib/libvirt/images/kali-attack
+    kali_disk: "{{ kali_dir }}/kali-attack.qcow2"
+    kali_seed: "{{ kali_dir }}/seed.iso"
+
+  tasks:
+    - name: Install cloud-image-utils (for cloud-localds)
+      apt:
+        name: cloud-image-utils
+        state: present
+        update_cache: true
+
+    - name: Ensure image directory exists
+      file:
+        path: "{{ kali_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Check whether the disk image already exists
+      stat:
+        path: "{{ kali_disk }}"
+      register: disk_stat
+
+    - name: Download, verify, and convert the Kali cloud image
+      when: not disk_stat.stat.exists
+      block:
+        - name: Download Kali cloud image tarball
+          get_url:
+            url: "https://kali.download/cloud-images/current/{{ kali_tarball }}"
+            dest: "/tmp/{{ kali_tarball }}"
+            mode: "0644"
+
+        - name: Download checksums
+          get_url:
+            url: "https://kali.download/cloud-images/current/SHA256SUMS"
+            dest: /tmp/kali-SHA256SUMS
+            mode: "0644"
+
+        - name: Verify checksum
+          shell: "grep {{ kali_tarball }} /tmp/kali-SHA256SUMS | sha256sum -c -"
+          args:
+            chdir: /tmp
+
+        - name: Extract disk.raw
+          command: tar xf /tmp/{{ kali_tarball }} -C /tmp
+          args:
+            creates: /tmp/disk.raw
+
+        - name: Convert to compact qcow2
+          command: "qemu-img convert -O qcow2 -c /tmp/disk.raw {{ kali_disk }}"
+
+        - name: Clean up tmp files
+          file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /tmp/disk.raw
+            - "/tmp/{{ kali_tarball }}"
+            - /tmp/kali-SHA256SUMS
+
+    - name: Copy cloud-init user-data
+      copy:
+        src: ../files/cloud-init/kali-attack/user-data
+        dest: "{{ kali_dir }}/user-data"
+        mode: "0644"
+
+    - name: Copy cloud-init meta-data
+      copy:
+        src: ../files/cloud-init/kali-attack/meta-data
+        dest: "{{ kali_dir }}/meta-data"
+        mode: "0644"
+
+    - name: Build cloud-init seed ISO
+      command: "cloud-localds {{ kali_seed }} {{ kali_dir }}/user-data {{ kali_dir }}/meta-data"
+
+    - name: Check whether the VM is already defined
+      command: virsh dominfo kali-attack
+      register: vm_check
+      failed_when: false
+      changed_when: false
+
+    - name: Define and start the VM
+      when: vm_check.rc != 0
+      command: >
+        virt-install --import
+        --name kali-attack
+        --memory 1536
+        --vcpus 2
+        --disk path={{ kali_disk }},bus=virtio
+        --disk path={{ kali_seed }},device=cdrom
+        --network network=range-nat,model=virtio
+        --network network=range-isolated,model=virtio
+        --os-variant debian12
+        --graphics none
+        --console pty,target_type=serial
+        --noautoconsole
