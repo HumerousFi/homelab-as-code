@@ -1,0 +1,9 @@
+services:
+  uptime-kuma:
+    image: louislam/uptime-kuma:1.23.16
+    container_name: uptime-kuma
+    restart: unless-stopped
+    ports:
+      - "100.92.165.30:3002:3001"
+    volumes:
+      - /home/humr/homelab/data/uptime-kuma:/app/data
