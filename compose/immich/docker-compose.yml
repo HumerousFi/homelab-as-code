@@ -1,0 +1,40 @@
+services:
+  immich-server:
+    container_name: immich_server
+    image: ghcr.io/immich-app/immich-server:release
+    restart: unless-stopped
+    ports:
+      - "100.92.165.30:2283:2283"
+    volumes:
+      - /home/humr/homelab/photos:/usr/src/app/upload
+      - /etc/localtime:/etc/localtime:ro
+    env_file:
+      - .env
+    depends_on:
+      - redis
+      - database
+
+  immich-machine-learning:
+    container_name: immich_machine_learning
+    image: ghcr.io/immich-app/immich-machine-learning:release
+    restart: unless-stopped
+    volumes:
+      - /home/humr/homelab/data/immich/model-cache:/cache
+    env_file:
+      - .env
+
+  redis:
+    container_name: immich_redis
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  database:
+    container_name: immich_postgres
+    image: tensorchord/pgvecto-rs:pg16-v0.3.0
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: immich
+      POSTGRES_USER: immich
+      POSTGRES_DB: immich
+    volumes:
+      - /home/humr/homelab/data/immich/postgres:/var/lib/postgresql/data

@@ -1,0 +1,17 @@
+services:
+  vaultwarden:
+    image: vaultwarden/server:latest
+    container_name: vaultwarden
+    restart: unless-stopped
+
+    ports:
+      - "127.0.0.1:8080:80"
+
+    volumes:
+      - /home/humr/homelab/data/vaultwarden:/data
+
+    env_file:
+      - .env
+
+    environment:
+      SIGNUPS_ALLOWED: true

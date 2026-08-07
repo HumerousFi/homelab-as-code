@@ -1,0 +1,12 @@
+services:
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    restart: unless-stopped
+
+    ports:
+      - "100.92.165.30:9000:9000"
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /home/humr/homelab/data/portainer:/data

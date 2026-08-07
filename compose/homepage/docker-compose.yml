@@ -1,0 +1,15 @@
+services:
+  homepage:
+    image: ghcr.io/gethomepage/homepage:latest
+    container_name: homepage
+    restart: unless-stopped
+
+    ports:
+      - "100.92.165.30:3000:3000"
+
+    volumes:
+      - /home/humr/homelab/data/homepage:/app/config
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+    environment:
+      HOMEPAGE_ALLOWED_HOSTS: coldcoffee:3000,192.168.29.234:3000,100.92.165.30:3000

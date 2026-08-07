@@ -1,0 +1,14 @@
+# secrets
+*.env
+.env
+**/.env
+*_TOKEN*
+*secret*
+*.key
+*.pem
+ansible/inventory/vault.yml
+.ansible_vault_pass
+
+# local state
+*.retry
+__pycache__/
