@@ -1,0 +1,40 @@
+services:
+  loki:
+    image: grafana/loki:3.1.1
+    container_name: loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/config.yaml
+    volumes:
+      - ./config/loki-config.yaml:/etc/loki/config.yaml:ro
+      - /home/humr/homelab/data/monitoring/loki:/loki
+
+  vector:
+    image: timberio/vector:0.41.1-debian
+    container_name: vector
+    restart: unless-stopped
+    # Needs root to read root-only log files (crowdsec.log is 600) and the
+    # system journal.
+    user: "0:0"
+    volumes:
+      - ./config/vector.yaml:/etc/vector/vector.yaml:ro
+      - /var/log/suricata:/host-logs/suricata:ro
+      - /var/log/crowdsec.log:/host-logs/crowdsec.log:ro
+      - /var/log/journal:/var/log/journal:ro
+      - /run/log/journal:/run/log/journal:ro
+      - /etc/machine-id:/etc/machine-id:ro
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "100.92.165.30:3001:3000"
+    env_file:
+      - .env
+    volumes:
+      - /home/humr/homelab/data/monitoring/grafana:/var/lib/grafana
+      - ./config/grafana-provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - loki

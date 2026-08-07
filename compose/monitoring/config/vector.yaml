@@ -1,0 +1,44 @@
+sources:
+  suricata:
+    type: file
+    include:
+      - /host-logs/suricata/eve.json
+
+  crowdsec_log:
+    type: file
+    include:
+      - /host-logs/crowdsec.log
+
+  journald:
+    type: journald
+
+sinks:
+  loki_suricata:
+    type: loki
+    inputs: [suricata]
+    endpoint: http://loki:3100
+    encoding:
+      codec: json
+    labels:
+      job: suricata
+      host: coldcoffee
+
+  loki_crowdsec:
+    type: loki
+    inputs: [crowdsec_log]
+    endpoint: http://loki:3100
+    encoding:
+      codec: json
+    labels:
+      job: crowdsec
+      host: coldcoffee
+
+  loki_journald:
+    type: loki
+    inputs: [journald]
+    endpoint: http://loki:3100
+    encoding:
+      codec: json
+    labels:
+      job: journald
+      host: coldcoffee
