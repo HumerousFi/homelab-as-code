@@ -1,0 +1,110 @@
+---
+# CrowdSec on coldcoffee: reads Suricata's eve.json + sshd auth activity
+# (via journalctl - this box is journald-only, no /var/log/auth.log),
+# correlates against community threat-intel scenarios, and the firewall
+# bouncer actually enforces bans via iptables. This is the "response" layer
+# that Suricata (detection-only) doesn't do itself.
+- name: Install and configure CrowdSec
+  hosts: coldcoffee_host
+  become: true
+
+  tasks:
+    - name: Download the official CrowdSec repo-setup script
+      get_url:
+        url: https://install.crowdsec.net
+        dest: /tmp/crowdsec-install.sh
+        mode: "0755"
+
+    - name: Run the repo-setup script (idempotent - just adds the apt repo)
+      command: bash /tmp/crowdsec-install.sh
+      args:
+        creates: /etc/apt/sources.list.d/crowdsec_crowdsec.list
+
+    - name: Install CrowdSec engine
+      apt:
+        name: crowdsec
+        state: present
+        update_cache: true
+
+    - name: Install the iptables firewall bouncer
+      apt:
+        name: crowdsec-firewall-bouncer-iptables
+        state: present
+
+    # Default LAPI port 127.0.0.1:8080 collides with Vaultwarden (see
+    # homelab-service-inventory memory) - move CrowdSec off it.
+    - name: Move CrowdSec's local API off port 8080 (config.yaml)
+      replace:
+        path: /etc/crowdsec/config.yaml
+        regexp: 'listen_uri: 127\.0\.0\.1:8080'
+        replace: 'listen_uri: 127.0.0.1:8090'
+      notify: restart crowdsec
+
+    - name: Update local_api_credentials.yaml to match
+      replace:
+        path: /etc/crowdsec/local_api_credentials.yaml
+        regexp: 'url: http://127\.0\.0\.1:8080'
+        replace: 'url: http://127.0.0.1:8090'
+      notify: restart crowdsec
+
+    - name: Update firewall bouncer's api_url to match
+      replace:
+        path: /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
+        regexp: 'api_url: http://127\.0\.0\.1:8080/'
+        replace: 'api_url: http://127.0.0.1:8090/'
+      notify: restart firewall bouncer
+
+    - name: Configure Suricata eve.json acquisition
+      copy:
+        dest: /etc/crowdsec/acquis.d/suricata.yaml
+        mode: "0644"
+        content: |
+          filename: /var/log/suricata/eve.json
+          labels:
+            type: eve
+      notify: restart crowdsec
+
+    - name: Configure sshd acquisition via journalctl
+      copy:
+        dest: /etc/crowdsec/acquis.d/sshd.yaml
+        mode: "0644"
+        content: |
+          source: journalctl
+          journalctl_filter:
+            - "_SYSTEMD_UNIT=ssh.service"
+          labels:
+            type: syslog
+      notify: restart crowdsec
+
+    - name: Install detection collections
+      command: "cscli collections install {{ item }}"
+      loop:
+        - crowdsecurity/sshd
+        - crowdsecurity/suricata
+        - crowdsecurity/linux
+      register: collection_install
+      changed_when: "'already installed' not in collection_install.stdout"
+      notify: restart crowdsec
+
+    - name: Enable and start CrowdSec
+      systemd:
+        name: crowdsec
+        enabled: true
+        state: started
+
+    - name: Enable and start the firewall bouncer
+      systemd:
+        name: crowdsec-firewall-bouncer
+        enabled: true
+        state: started
+
+  handlers:
+    - name: restart crowdsec
+      systemd:
+        name: crowdsec
+        state: restarted
+
+    - name: restart firewall bouncer
+      systemd:
+        name: crowdsec-firewall-bouncer
+        state: restarted
