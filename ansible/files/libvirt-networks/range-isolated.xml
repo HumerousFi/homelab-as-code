@@ -1,0 +1,13 @@
+<network>
+  <name>range-isolated</name>
+  <!-- No <forward> element: libvirt keeps this network fully isolated -->
+  <!-- no routing to eno1 (LAN), tailscale0, or the internet. Vulnerable    -->
+  <!-- targets live here; only reachable from the host itself or from a    -->
+  <!-- VM (the Kali box) that has a second NIC on this network.            -->
+  <bridge name="virbr-riso" stp="on" delay="0"/>
+  <ip address="192.168.101.1" netmask="255.255.255.0">
+    <dhcp>
+      <range start="192.168.101.100" end="192.168.101.200"/>
+    </dhcp>
+  </ip>
+</network>
