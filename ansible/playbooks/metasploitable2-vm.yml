@@ -1,0 +1,108 @@
+---
+# Deploys Metasploitable2 as the range's first OS-level target. Unlike the
+# Kali box, this isn't cloud-init provisioned - it's a pre-built vulnerable
+# image distributed by the Metasploitable project, meant to be booted as-is
+# (default creds msfadmin/msfadmin are the point, not a bug).
+#
+# range-isolated ONLY - no internet, matching the "targets don't get
+# internet access" decision. Reachable from Kali as an L2 peer.
+- name: Deploy Metasploitable2 target VM
+  hosts: masalachai_host
+  become: true
+
+  vars:
+    ms2_dir: /var/lib/libvirt/images/metasploitable2
+    ms2_zip_url: "https://downloads.sourceforge.net/project/metasploitable/Metasploitable2/metasploitable-linux-2.0.0.zip"
+    ms2_zip_md5: "abb0a95bd4422397ed235a7284e2ed7f"
+    ms2_zip_sha1: "3bd77207f74b7031e50f7cd83539bd401b1284ff"
+    ms2_disk: "{{ ms2_dir }}/metasploitable2.qcow2"
+
+  tasks:
+    - name: Ensure image directory exists
+      file:
+        path: "{{ ms2_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Check whether the disk image already exists
+      stat:
+        path: "{{ ms2_disk }}"
+      register: disk_stat
+
+    - name: Download, verify, and convert Metasploitable2
+      when: not disk_stat.stat.exists
+      block:
+        - name: Ensure unzip is installed
+          apt:
+            name: unzip
+            state: present
+            update_cache: true
+
+        # Ansible's get_url stalls against SourceForge's mirror-selection
+        # redirect/cookie dance (observed: hangs at ~120KB indefinitely).
+        # Plain curl -L handles it fine.
+        - name: Download Metasploitable2 zip
+          command: >
+            curl -sL --retry 5 --retry-delay 3
+            -o /tmp/metasploitable2.zip
+            {{ ms2_zip_url }}
+          args:
+            creates: /tmp/metasploitable2.zip
+
+        - name: Verify MD5
+          command: "md5sum /tmp/metasploitable2.zip"
+          register: md5_check
+          changed_when: false
+          failed_when: ms2_zip_md5 not in md5_check.stdout
+
+        - name: Verify SHA1
+          command: "sha1sum /tmp/metasploitable2.zip"
+          register: sha1_check
+          changed_when: false
+          failed_when: ms2_zip_sha1 not in sha1_check.stdout
+
+        - name: Extract zip
+          unarchive:
+            src: /tmp/metasploitable2.zip
+            dest: /tmp
+            remote_src: true
+            creates: /tmp/Metasploitable2-Linux
+
+        - name: Find the vmdk disk
+          find:
+            paths: /tmp/Metasploitable2-Linux
+            patterns: "*.vmdk"
+          register: vmdk_find
+
+        - name: Convert vmdk to qcow2
+          command: "qemu-img convert -O qcow2 {{ vmdk_find.files[0].path }} {{ ms2_disk }}"
+
+        - name: Clean up tmp files
+          file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /tmp/metasploitable2.zip
+            - /tmp/Metasploitable2-Linux
+
+    - name: Check whether the VM is already defined
+      command: virsh dominfo metasploitable2
+      register: vm_check
+      failed_when: false
+      changed_when: false
+
+    - name: Define and start the VM (range-isolated only - no internet)
+      when: vm_check.rc != 0
+      # bus=ide / model=e1000, not virtio: Metasploitable2's guest kernel
+      # (Ubuntu 8.04, ~2010) predates common virtio driver support.
+      command: >
+        virt-install --import
+        --name metasploitable2
+        --memory 512
+        --vcpus 1
+        --disk path={{ ms2_disk }},bus=ide
+        --network network=range-isolated,model=e1000
+        --os-variant ubuntu8.04
+        --graphics none
+        --console pty,target_type=serial
+        --noautoconsole
