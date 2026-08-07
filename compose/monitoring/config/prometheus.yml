@@ -1,0 +1,22 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: node_exporter
+    static_configs:
+      - targets:
+          - "100.92.165.30:9100"
+          - "100.115.9.67:9100"
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: "100.92.165.30:9100"
+        target_label: instance
+        replacement: coldcoffee
+      - source_labels: [__address__]
+        regex: "100.115.9.67:9100"
+        target_label: instance
+        replacement: masalachai
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

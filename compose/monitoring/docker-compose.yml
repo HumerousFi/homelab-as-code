@@ -25,6 +25,14 @@ services:
     depends_on:
       - loki
 
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: prometheus
+    restart: unless-stopped
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - /home/humr/homelab/data/monitoring/prometheus:/prometheus
+
   grafana:
     image: grafana/grafana:11.2.0
     container_name: grafana
@@ -38,3 +46,4 @@ services:
       - ./config/grafana-provisioning:/etc/grafana/provisioning:ro
     depends_on:
       - loki
+      - prometheus
