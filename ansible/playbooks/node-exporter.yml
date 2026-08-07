@@ -1,0 +1,111 @@
+---
+# Installs node_exporter natively (systemd service, not a container - avoids
+# the host-networking/binding complexity that would otherwise be needed to
+# expose real host-level metrics from inside a container) on every host in
+# the fleet group. Binds to the host's own Tailscale IP only, never 0.0.0.0 -
+# matches the exposure policy applied everywhere else in this repo.
+- name: Install node_exporter
+  hosts: fleet
+  become: true
+
+  vars:
+    node_exporter_version: "1.12.1"
+    node_exporter_sha256sums_url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/sha256sums.txt"
+    node_exporter_tarball_url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+    node_exporter_tarball_name: "node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+
+  tasks:
+    - name: Check whether node_exporter is already installed at this version
+      stat:
+        path: "/usr/local/bin/node_exporter-{{ node_exporter_version }}"
+      register: already_installed
+
+    - name: Download, verify, and install node_exporter
+      when: not already_installed.stat.exists
+      block:
+        - name: Download sha256sums.txt
+          get_url:
+            url: "{{ node_exporter_sha256sums_url }}"
+            dest: /tmp/node_exporter-sha256sums.txt
+            mode: "0644"
+
+        - name: Download node_exporter tarball
+          get_url:
+            url: "{{ node_exporter_tarball_url }}"
+            dest: "/tmp/{{ node_exporter_tarball_name }}"
+            mode: "0644"
+
+        - name: Verify checksum
+          shell: "grep {{ node_exporter_tarball_name }} /tmp/node_exporter-sha256sums.txt | sha256sum -c -"
+          args:
+            chdir: /tmp
+
+        - name: Extract tarball
+          unarchive:
+            src: "/tmp/{{ node_exporter_tarball_name }}"
+            dest: /tmp
+            remote_src: true
+
+        - name: Install versioned binary
+          copy:
+            src: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter"
+            dest: "/usr/local/bin/node_exporter-{{ node_exporter_version }}"
+            mode: "0755"
+            remote_src: true
+
+        - name: Symlink current version
+          file:
+            src: "/usr/local/bin/node_exporter-{{ node_exporter_version }}"
+            dest: /usr/local/bin/node_exporter
+            state: link
+          notify: restart node_exporter
+
+        - name: Clean up tmp files
+          file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - "/tmp/{{ node_exporter_tarball_name }}"
+            - "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64"
+            - /tmp/node_exporter-sha256sums.txt
+
+    - name: Create node_exporter system user
+      user:
+        name: node_exporter
+        system: true
+        shell: /usr/sbin/nologin
+        create_home: false
+
+    - name: Install systemd unit
+      copy:
+        dest: /etc/systemd/system/node_exporter.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Prometheus Node Exporter
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          User=node_exporter
+          Group=node_exporter
+          Type=simple
+          ExecStart=/usr/local/bin/node_exporter --web.listen-address={{ tailscale_ip }}:9100
+
+          [Install]
+          WantedBy=multi-user.target
+      notify: restart node_exporter
+
+    - name: Enable and start node_exporter
+      systemd:
+        daemon_reload: true
+        name: node_exporter
+        enabled: true
+        state: started
+
+  handlers:
+    - name: restart node_exporter
+      systemd:
+        daemon_reload: true
+        name: node_exporter
+        state: restarted
