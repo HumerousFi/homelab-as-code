@@ -1,0 +1,38 @@
+---
+# Installs Kali's headless tool metapackage. The generic-cloud base image is
+# intentionally bare (no tools at all, not even curl) - this is what actually
+# makes the box useful. kali-linux-headless is Kali's own metapackage for
+# exactly this case: CLI-only systems with no desktop.
+- name: Install pentest tooling on the Kali attack box
+  hosts: kali_attack
+  become: true
+
+  tasks:
+    - name: apt update
+      apt:
+        update_cache: true
+
+    - name: Install kali-linux-headless metapackage
+      apt:
+        name: kali-linux-headless
+        state: present
+
+    # cloud-init only auto-configures the primary NIC by default; eth1 (the
+    # range-isolated side) stayed DOWN until this. kali-attack-vm.yml now
+    # ships a network-config for future rebuilds, but this box was already
+    # provisioned before that existed, so patch it directly here too.
+    - name: Ensure eth1 (range-isolated) has a netplan config
+      copy:
+        dest: /etc/netplan/60-range-isolated.yaml
+        mode: "0600"
+        content: |
+          network:
+            version: 2
+            ethernets:
+              eth1:
+                dhcp4: true
+      register: eth1_netplan
+
+    - name: Apply netplan if eth1 config changed
+      command: netplan apply
+      when: eth1_netplan.changed

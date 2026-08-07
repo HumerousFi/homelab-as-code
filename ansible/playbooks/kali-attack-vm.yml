@@ -81,8 +81,16 @@
         dest: "{{ kali_dir }}/meta-data"
         mode: "0644"
 
+    - name: Copy cloud-init network-config
+      copy:
+        src: ../files/cloud-init/kali-attack/network-config
+        dest: "{{ kali_dir }}/network-config"
+        mode: "0644"
+
     - name: Build cloud-init seed ISO
-      command: "cloud-localds {{ kali_seed }} {{ kali_dir }}/user-data {{ kali_dir }}/meta-data"
+      command: >
+        cloud-localds -N {{ kali_dir }}/network-config
+        {{ kali_seed }} {{ kali_dir }}/user-data {{ kali_dir }}/meta-data
 
     - name: Check whether the VM is already defined
       command: virsh dominfo kali-attack
