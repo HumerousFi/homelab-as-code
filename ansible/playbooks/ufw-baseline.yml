@@ -1,0 +1,77 @@
+---
+# Baseline firewall for both boxes. Manual rollout on 2026-08-09 hit a real
+# gotcha worth documenting: `ufw allow OpenSSH` via the CLI inserted a
+# `DENY 22/tcp Anywhere` rule *before* the matching ALLOW on both hosts
+# (first-match-wins in the underlying iptables chain -> would have locked out
+# all SSH, including over Tailscale). Using the `ufw` module here instead of
+# raw `ufw` shell commands, which manages rules declaratively and doesn't
+# reproduce that ordering bug - `ufw status numbered` was used to confirm no
+# stray deny rule exists after this playbook runs, and should be re-checked
+# after any change to this file.
+- name: Configure baseline ufw firewall
+  hosts: fleet
+  become: true
+
+  tasks:
+    - name: Set default incoming/outgoing policy
+      community.general.ufw:
+        direction: "{{ item.direction }}"
+        policy: "{{ item.policy }}"
+      loop:
+        - { direction: incoming, policy: deny }
+        - { direction: outgoing, policy: allow }
+
+    - name: Allow SSH (safety net against Tailscale-only lockout)
+      community.general.ufw:
+        rule: allow
+        name: OpenSSH
+
+    - name: Allow all traffic on the Tailscale interface
+      community.general.ufw:
+        rule: allow
+        interface: tailscale0
+        direction: in
+
+    # masalachai only: the pentest range's libvirt bridges. Host traffic
+    # (dnsmasq DHCP/DNS to range VMs, Docker macvlan on virbr-riso) needs to
+    # reach the ufw INPUT chain; NAT/FORWARD for range-nat's internet access
+    # is handled separately below via DEFAULT_FORWARD_POLICY, not this rule.
+    - name: Allow traffic on the pentest range's libvirt bridges
+      when: inventory_hostname == 'masalachai'
+      community.general.ufw:
+        rule: allow
+        interface: "{{ item }}"
+        direction: in
+      loop:
+        - virbr-rnat
+        - virbr-riso
+
+    # range-isolated has no <forward> element in its libvirt network XML, so
+    # it has no NAT/route out regardless of this policy - isolation is
+    # enforced at the libvirt network layer, not by ufw. This only restores
+    # internet access for the Kali box via range-nat's NAT'd forwarding,
+    # which ufw's default DROP forward policy would otherwise block.
+    - name: Set forward policy to ACCEPT (needed for libvirt NAT)
+      when: inventory_hostname == 'masalachai'
+      ansible.builtin.lineinfile:
+        path: /etc/default/ufw
+        regexp: '^DEFAULT_FORWARD_POLICY='
+        line: 'DEFAULT_FORWARD_POLICY="ACCEPT"'
+      notify: reload ufw
+
+    - name: Enable ufw
+      community.general.ufw:
+        state: enabled
+
+    - name: Verify no stray DENY-before-ALLOW ordering exists on port 22
+      ansible.builtin.command: ufw status numbered
+      register: ufw_status
+      changed_when: false
+      failed_when: >
+        'DENY IN' in ufw_status.stdout and
+        ufw_status.stdout.find('DENY IN') < ufw_status.stdout.find('ALLOW IN')
+
+  handlers:
+    - name: reload ufw
+      community.general.ufw:
+        state: reloaded
