@@ -39,7 +39,8 @@ headless Kali attack box, DVWA + Juice Shop (containers), Metasploitable2 (VM). 
 same default-deny posture, with the range's libvirt bridges explicitly allowed.
 
 Everything above is bound to the Tailscale interface, localhost, or the range's private
-libvirt bridges only — nothing is reachable from the raw LAN or public internet.
+libvirt bridges only — nothing is reachable from the raw LAN or public internet, except the two
+things deliberately made public: a fleet-health Grafana dashboard and a status page, both via
+Cloudflare Tunnel (outbound-only, no inbound ports opened). See `docs/architecture.md`.
 
-**Not yet built:** Cloudflare Tunnel for the one or two services planned to go public, and the
-third (16GB) machine's SIEM-class upgrade.
+**Not yet built:** the third (16GB) machine's SIEM-class upgrade, and the Windows/AD lab.

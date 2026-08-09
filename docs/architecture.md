@@ -158,16 +158,23 @@ cloud-init bug before finding this — the boot process was fine the entire time
 
 ## Public exposure policy
 
-Not everything stays private. The plan (not yet built — tracked as the next milestone) is to
-selectively expose one or two read-only, properly-scoped items — a Grafana snapshot or an
-Uptime Kuma status page — via Cloudflare Tunnel, alongside a static portfolio write-up.
-Everything else (the detection stack proper, the pentest range, Vaultwarden, Portainer, Immich)
-stays Tailscale-only, permanently. Adding public surface area is a deliberate choice made per
-service, not a default.
+Not everything stays private. Two read-only, narrowly-scoped items are public via Cloudflare
+Tunnel (outbound-only connector on `coldcoffee`, no inbound ports opened for it):
+
+- **`grafana.pranavc.me`** — the base Grafana app, login-gated like normal. The one exception is
+  a single dashboard (fleet CPU/mem/disk/uptime for both hosts) shared through Grafana's native
+  public-dashboard feature, which mints a dedicated access-token URL for *that dashboard only* —
+  not anonymous access to the instance. Nothing else in Grafana is reachable without logging in.
+- **`status.pranavc.me`** — an Uptime Kuma status page.
+
+Everything else (the detection stack's Grafana panels beyond that one dashboard, the pentest
+range, Vaultwarden, Portainer, Immich) stays Tailscale-only, permanently. Adding public surface
+area is a deliberate choice made per service — a specific dashboard, not a whole app — not a
+default.
 
 ## Roadmap
 
-- [ ] Cloudflare Tunnel + selective public dashboard
+- [x] Cloudflare Tunnel + selective public dashboard
 - [ ] Windows/AD lab (deferred to the 16GB machine — a domain controller alone wants 4GB+)
 - [ ] Full SIEM (Wazuh or Security Onion) on the 16GB machine once available, ingesting from
       both existing hosts
