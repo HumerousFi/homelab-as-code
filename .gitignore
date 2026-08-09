@@ -8,6 +8,7 @@
 *.pem
 ansible/inventory/vault.yml
 .ansible_vault_pass
+ansible/files/cloudflare-tunnel-token
 
 # local state
 *.retry

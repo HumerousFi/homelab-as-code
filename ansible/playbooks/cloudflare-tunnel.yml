@@ -1,0 +1,57 @@
+---
+# Installs cloudflared and runs it as a remotely-managed tunnel (token-based,
+# not the older cert.pem/browser-login flow - that flow needs an interactive
+# browser on the machine running it, which doesn't exist on a headless remote
+# box). Public hostname -> origin routing (status.pranavc.me, grafana.pranavc.me)
+# is configured in the Cloudflare dashboard against this tunnel, not here -
+# that's a low-privilege, low-blast-radius action to leave in the dashboard
+# rather than handing this playbook broader Cloudflare API scope than it needs.
+#
+# The tunnel token itself lives in ansible/files/cloudflare-tunnel-token,
+# gitignored - it's a bearer credential for this one tunnel, generated from
+# the Cloudflare Zero Trust dashboard (Networks > Tunnels > Create a tunnel).
+# Only inbound change on this host: none. The tunnel is outbound-only to
+# Cloudflare's edge, so ufw's default-deny-incoming needs no new rule for it.
+- name: Install and run the Cloudflare Tunnel connector
+  hosts: coldcoffee_host
+  become: true
+
+  vars:
+    tunnel_token_file: ../files/cloudflare-tunnel-token
+
+  tasks:
+    - name: Add Cloudflare's apt signing key
+      ansible.builtin.get_url:
+        url: https://pkg.cloudflare.com/cloudflare-main.gpg
+        dest: /usr/share/keyrings/cloudflare-main.gpg
+        mode: "0644"
+
+    - name: Add cloudflared apt repo
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared {{ ansible_distribution_release }} main"
+        filename: cloudflared
+        state: present
+
+    - name: Install cloudflared
+      ansible.builtin.apt:
+        name: cloudflared
+        state: present
+        update_cache: true
+
+    - name: Check whether the cloudflared service is already installed
+      ansible.builtin.systemd:
+        name: cloudflared
+      register: cf_service
+      failed_when: false
+
+    - name: Install the tunnel as a systemd service (first run only)
+      when: cf_service.status is not defined
+      ansible.builtin.command: >
+        cloudflared service install
+        {{ lookup('file', tunnel_token_file) }}
+
+    - name: Ensure the service is enabled and running
+      ansible.builtin.systemd:
+        name: cloudflared
+        enabled: true
+        state: started
