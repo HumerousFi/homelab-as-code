@@ -109,6 +109,53 @@ was verified in practice for the firewall rollout (see below) and is the standar
 the build holds to: if it isn't reproducible from this repo against a blank OS install, it isn't
 considered done.
 
+## AI-driven tooling on the range (hexstrike-ai)
+
+Claude Code (running on `arch`) drives the range's tools via
+[hexstrike-ai](https://github.com/0x4m4/hexstrike-ai), an MCP server that
+wraps nmap/sqlmap/gobuster/etc. as callable tools. Two pieces, on two
+different machines, same split as the pattern used for the standalone Kali
+desktop VM (see `dotfiles`'s "hexstrike-ai MCP server on the Kali VM"):
+
+- **`hexstrike_server.py`** (the Flask backend that actually shells out to
+  the tools) runs on **`kali-attack`**, cloned to `~/hexstrike-ai`, in a
+  venv (`hexstrike-env`). It has to run there, not on `masalachai` — only
+  `kali-attack`'s second NIC has a route to `range-isolated` where DVWA/
+  Juice Shop/Metasploitable2 actually live. `HEXSTRIKE_HOST` isn't set (so
+  it binds `127.0.0.1` only) since the only consumer is the SSH tunnel
+  below, not the network.
+- **`hexstrike_mcp.py`** (thin MCP↔HTTP client) runs on `arch`, in a
+  separate clone/venv at `~/tools/hexstrike-ai`, registered with Claude
+  Code as the user-scope MCP server `hexstrike-masalachai`, pointed at
+  `http://localhost:8889`.
+
+**Reaching `kali-attack:8888` from `arch` needs a two-hop relay, not a
+single tunnel**, because of the same key-trust boundary as the "nested SSH"
+bug below: `kali-attack` only trusts `coldcoffee`'s identity, and `arch`
+doesn't hold that private key, so a single multi-hop `ssh -J` originating
+from `arch` can authenticate to `masalachai` but not past it. The working
+shape is two independently-authenticated legs, chained through a shared
+port:
+
+```
+# Leg 1, run from coldcoffee (uses coldcoffee's own trusted key for the
+# jump through masalachai to kali-attack):
+ssh -fN -L 8889:localhost:8888 kali-attack
+
+# Leg 2, run from arch (uses arch's already-normal access to coldcoffee):
+ssh -fN -L 8889:localhost:8889 coldcoffee
+```
+
+After both legs, `http://localhost:8889` on `arch` reaches
+`hexstrike_server.py` on `kali-attack`. Neither leg is a systemd service —
+both are started manually per session (`pgrep -fa 'L 8889'` on each host to
+check if a leg is already up before starting a duplicate). This is
+deliberate: unlike the desktop Kali VM's hexstrike server (auto-starts with
+that VM, since it's a personal low-stakes lab), leaving an offensive
+tools API listening by default on the range's attacker box isn't something
+to make automatic — `kali-attack` and the tunnel are both started
+on-demand for a testing session, not left running.
+
 ## Real bugs found and fixed along the way
 
 Documenting these because they were genuine issues, not because the debugging was interesting —
@@ -155,6 +202,22 @@ like a problem on the *target* side. The fix is `ssh -J masalachai <target>` (Pr
 directly from `coldcoffee`, which correctly forwards the *local* identity through the jump host
 instead of expecting the jump host to have its own key. Lost real time chasing a phantom
 cloud-init bug before finding this — the boot process was fine the entire time.
+
+**`kali-attack`'s `/tmp` is a small tmpfs, which silently breaks `pip install` for
+anything with a large native build.** Installing hexstrike-ai's full
+`requirements.txt` on `kali-attack` failed with `OSError(28, 'No space left
+on device')` — misleading, since `df -h /` showed 12G free. The actual
+constraint is `/tmp` (RAM-backed tmpfs, 735M, matching the VM's 1.4GB total
+RAM) — pip stages wheel builds there, and `angr`'s build blew past it.
+`angr`/`pwntools` turned out to be dead weight anyway: grepping
+`hexstrike_server.py` showed both only appear inside f-string *templates*
+the server writes out for generated exploit scripts, never as actual
+top-level imports, so the server runs fine without them. Fixed by
+installing from a trimmed `requirements.txt` (everything except
+`pwntools`/`angr`/the `bcrypt` pin that existed only for pwntools
+compatibility) rather than by changing `TMPDIR` or growing the tmpfs —
+irrelevant for a range attacker box whose job is web-app testing, not
+binary exploitation.
 
 ## Public exposure policy
 
