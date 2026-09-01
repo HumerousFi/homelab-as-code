@@ -14,4 +14,4 @@ services:
       - .env
 
     environment:
-      SIGNUPS_ALLOWED: true
+      SIGNUPS_ALLOWED: false
