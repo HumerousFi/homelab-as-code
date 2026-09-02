@@ -219,6 +219,29 @@ compatibility) rather than by changing `TMPDIR` or growing the tmpfs —
 irrelevant for a range attacker box whose job is web-app testing, not
 binary exploitation.
 
+**Prometheus couldn't scrape coldcoffee's own node_exporter (2026-09-02).** `node_exporter` binds to the
+host's `tailscale_ip` only (never `0.0.0.0`, per `node-exporter.yml`), which works fine for masalachai's
+cross-host scrape over a real `tailscale0` hop - but Prometheus scrapes coldcoffee's own node_exporter from
+inside a Docker container on the *same* host, so that traffic crosses the docker bridge instead, which `ufw`'s
+baseline (SSH + `tailscale0` only) silently dropped. Confirmed via `up{instance="coldcoffee"}` == 0 in
+Prometheus while masalachai's target was healthy. Fixed with a scoped `ufw-baseline.yml` rule (port 9100/tcp
+only, from Docker's private bridge range) rather than opening the interface broadly.
+
+**cAdvisor can't identify any container's storage layer under Docker 29's containerd-snapshotter backend.**
+Tried adding cAdvisor (both v0.49.1 and v0.52.1) on both hosts for per-container CPU/mem metrics - every
+container came back as `Failed to identify the read-write layer ID`, because `coldcoffee` runs Docker 29.7.2
+with the newer containerd-snapshotter-backed `overlayfs` storage driver, and cAdvisor only knows the classic
+`overlay2` graphdriver's layerdb layout. This is a genuine, current upstream incompatibility, not a config
+mistake - reverted cleanly rather than ship a privileged container that reports nothing. Per-container live
+stats are still visible directly in Portainer's own UI (it talks to the Docker API, not cgroups/layerdb).
+
+**sshd here doesn't log `"Failed password"` - it logs `"Connection closed by <IP> port <N> [preauth]"`.**
+Building a Grafana panel to count SSH failed-auth attempts, `|= "Failed password"` matched nothing even
+though a real CrowdSec `ssh-bf` ban had just fired from that exact journalctl source. Checked the raw journal
+directly (`journalctl _SYSTEMD_UNIT=ssh.service`) - this OpenSSH build never emits the classic string at all,
+only `"Connection closed by ..."`/`"Connection closed by authenticating user ... [preauth]"`, which is what
+CrowdSec's own sshd parser was already matching. Fixed the panel to filter on `"[preauth]"` instead.
+
 ## Public exposure policy
 
 Not everything stays private. Two read-only, narrowly-scoped items are public via Cloudflare

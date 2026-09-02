@@ -31,7 +31,9 @@ A third machine (16GB RAM) is planned to take over SIEM-class workloads once ava
 **`coldcoffee`** — personal services (Immich, Vaultwarden behind `tailscale serve` for TLS,
 Homepage, Portainer) plus the detection/observability stack: Suricata (network IDS) → CrowdSec
 (behavioral detection + auto-block) → Loki/Vector/Grafana (log visualization), Prometheus +
-node_exporter, Uptime Kuma. `ufw` enabled, default-deny incoming.
+node_exporter, Uptime Kuma. `ufw` enabled, default-deny incoming. Three Grafana dashboards:
+Fleet Health, Security & Detection (live Suricata/CrowdSec/SSH-auth activity from Loki), and
+Pentest Range Activity (masalachai host + range-bridge traffic from Prometheus).
 
 **`masalachai`** — isolated pentest range: two libvirt networks (`range-nat` for the Kali attack
 box's internet access, `range-isolated` — no forward/route at all — for vulnerable targets),

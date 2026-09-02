@@ -1,0 +1,99 @@
+{
+  "uid": "homelab-security-detection",
+  "title": "Security & Detection",
+  "tags": ["homelab", "security"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Suricata alerts / min",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({job=\"suricata\"} | json | line_format \"{{.message}}\" |= \"\\\"event_type\\\":\\\"alert\\\"\" [$__interval]))",
+          "legendFormat": "alerts",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 12, "lineWidth": 2 } }, "overrides": [] }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "CrowdSec bans / min",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({job=\"crowdsec\"} | json | line_format \"{{.message}}\" |= \"ban on Ip\" [$__interval]))",
+          "legendFormat": "bans",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 12, "lineWidth": 2 } }, "overrides": [] }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "SSH failed-auth attempts / min",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({job=\"journald\"} | json | _SYSTEMD_UNIT=`ssh.service` |= \"[preauth]\" [$__interval]))",
+          "legendFormat": "failed logins",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 12, "lineWidth": 2 } }, "overrides": [] }
+    },
+    {
+      "id": 4,
+      "type": "logs",
+      "title": "Live Suricata alerts",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "{job=\"suricata\"} | json | line_format \"{{.message}}\" |= \"\\\"event_type\\\":\\\"alert\\\"\"",
+          "refId": "A"
+        }
+      ],
+      "options": { "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true }
+    },
+    {
+      "id": 5,
+      "type": "logs",
+      "title": "Live CrowdSec activity",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "{job=\"crowdsec\"} | json | line_format \"{{.message}}\" |= \"level=info\"",
+          "refId": "A"
+        }
+      ],
+      "options": { "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true }
+    },
+    {
+      "id": 6,
+      "type": "logs",
+      "title": "SSH auth activity",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "{job=\"journald\"} | json | _SYSTEMD_UNIT=`ssh.service` | line_format `{{.message}}`",
+          "refId": "A"
+        }
+      ],
+      "options": { "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true }
+    }
+  ]
+}

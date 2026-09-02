@@ -59,6 +59,24 @@
         line: 'DEFAULT_FORWARD_POLICY="ACCEPT"'
       notify: reload ufw
 
+    # coldcoffee only: node_exporter binds to the host's own tailscale_ip
+    # (never 0.0.0.0, per node-exporter.yml), but Prometheus scrapes it from
+    # inside a Docker container on the *same* host - that traffic crosses the
+    # docker bridge, not tailscale0, so the "allow tailscale0" rule above
+    # doesn't cover it and it was silently dropped (confirmed via
+    # `up{instance="coldcoffee"}` == 0 in Prometheus while masalachai's
+    # cross-host scrape over real tailscale0 worked fine). Scoped to the
+    # exporter's port only, from Docker's private bridge range, rather than
+    # opening the interface broadly like the masalachai libvirt rule does.
+    - name: Allow Docker bridge networks to reach node_exporter (same-host scrape path)
+      when: inventory_hostname == 'coldcoffee'
+      community.general.ufw:
+        rule: allow
+        direction: in
+        from_ip: 172.16.0.0/12
+        to_port: "9100"
+        proto: tcp
+
     - name: Enable ufw
       community.general.ufw:
         state: enabled
