@@ -33,7 +33,14 @@ Homepage, Portainer) plus the detection/observability stack: Suricata (network I
 (behavioral detection + auto-block) → Loki/Vector/Grafana (log visualization), Prometheus +
 node_exporter, Uptime Kuma. `ufw` enabled, default-deny incoming. Three Grafana dashboards:
 Fleet Health, Security & Detection (live Suricata/CrowdSec/SSH-auth activity from Loki), and
-Pentest Range Activity (masalachai host + range-bridge traffic from Prometheus).
+Pentest Range Activity (masalachai host + range-bridge traffic from Prometheus). Uptime Kuma
+monitors Homepage, Portainer, Immich, Jellyfin, Grafana, masalachai (TCP/22), and the public
+`grafana.pranavc.me` dashboard (also tracks its TLS cert expiry).
+
+**Known gap:** Vaultwarden is documented as being served via `tailscale serve` for TLS, but no
+such mapping currently exists (`tailscale serve status` only shows Jellyfin) - it's bound to
+`127.0.0.1:8080` only and is unreachable from anywhere but a shell on coldcoffee itself. Not yet
+fixed; needs a `tailscale serve` rule added on a different path/port than Jellyfin's root mapping.
 
 **`masalachai`** — isolated pentest range: two libvirt networks (`range-nat` for the Kali attack
 box's internet access, `range-isolated` — no forward/route at all — for vulnerable targets),
